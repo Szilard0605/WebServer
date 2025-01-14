@@ -1,0 +1,1 @@
+alert("teszt/script.js loaded");
