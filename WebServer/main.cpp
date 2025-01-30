@@ -1,7 +1,5 @@
 
 #include "Server.h"
-#include "FamPong/FamPong.h"
-
 #include <windows.h>
 
 #include <time.h>
@@ -15,14 +13,15 @@ int main(int argc, char* argv[])
 
 	// teszt pages
 	Server.SetHomePageSource("html/teszt/index.html");
-	Server.LinkRequestToFile("homepage", { "html/teszt/index.html", "text/html" });
+
 	Server.LinkRequestToFile("teszt", { "html/teszt/teszt.html", "text/html" });
+	Server.LinkRequestToFile("homepage", { "html/teszt/index.html", "text/html" });
 	Server.LinkRequestToFile("tesztstyle.css", { "html/teszt/tesztstyle.css", "text/css"});
 	Server.LinkRequestToFile("script.js", {"html/teszt/script.js", "text/javascript"});
+	Server.LinkRequestToFile("p5teszt", { "html/teszt/p5teszt.html", "text/html" });
+	Server.LinkRequestToFile("script.js", { "html/teszt/script.js", "text/javascript" });
 
-	FamPong::Init();
-
-	if (Server.Start("192.168.0.19", 7000))
+	if (Server.Start("192.168.0.21", 3000))
 	{
 		printf("Server started\n");
 	}

@@ -8,10 +8,8 @@
 #include <sstream>
 
 #include <iostream>
-#include "FamPong/FamPong.h"
 
 WebServer* WebServer::s_ServerInstance = nullptr;
-
 fd_set s_ReadFDS;
 
 
@@ -22,7 +20,6 @@ WebServer::WebServer()
         printf("Error: Server instance already exists\n");
         return;
     }
-
 
     s_ServerInstance = this;
 
@@ -134,17 +131,14 @@ void WebServer::Update()
         }
         else if (bytesReceived == 0) 
         {
-            // Connection closed
             printf("Connectionis closed for %s:%d\n", clientIP, clientPort);
             return;
         }
         else
         {
-            // Handle recv error
-            int errorCode = WSAGetLastError(); // Windows specific
+            int errorCode = WSAGetLastError(); 
             if (errorCode != WSAEWOULDBLOCK)
             {
-                // Handle other errors
                 std::cerr << "Error in recv: " << errorCode << "\n";
                 return;
             }
@@ -154,61 +148,48 @@ void WebServer::Update()
 
 void WebServer::HandleMessage(const char* buffer, int bytesReceived, unsigned long long clientSocket, const char* clientIP, int clientPort)
 {
-    if (bytesReceived > 0)
-    {
-        char* message = new char[bytesReceived + 1];
-        memcpy(message, buffer, bytesReceived);
-        message[bytesReceived] = '\0';
+    if (bytesReceived <= 0)
+        return;
+  
+    char* message = new char[bytesReceived + 1];
+    memcpy(message, buffer, bytesReceived);
+    message[bytesReceived] = '\0';
 
-        //printf("-------------\nReceived %d bytes from client.\n", bytesReceived);
-        //printf("%s\n------------------\n", message);
+    std::string url = ParseURLFromMessage(message);
+    PageSource pageSource = GetPageSourceFromURL(url);
 
-        std::string url = ParseURLFromMessage(message);
-        PageSource pageSource = GetPageSourceFromURL(url);
-
+    printf("%s:%d: %s\n", clientIP, clientPort, message);
    
-        if (!pageSource.Path.length())
-        {
-            if (url == "fampong_connect")
-            {
-                //printf("FamPong connect fetch from %s:%d\n", clientIP, clientPort);
-
-
-
-                bool IsHost;
-                FamPong::OnClientConnect(clientSocket, clientIP, clientPort, IsHost);
-                return;
-            }
-
-            if (url == "/fampong_move" || url == "fampong_move")
-            {
-                //printf("FamPong move fetch from %s:%d\n", clientIP, clientPort);
-                int PlayerID, Movement;
-                bool IsHost;
-                FamPong::ParsePlayerMovement(message, PlayerID, Movement);
-                FamPong::OnPlayerMove(PlayerID, Movement);
-                FamPong::OnClientConnect(clientSocket, clientIP, clientPort, IsHost);
-                return;
-            }
-
-            if (strlen(message) <= 0)
-                return;
-
-            //printf("-------------\nReceived %d bytes from client.\n", bytesReceived);
-            //printf("%s\n------------------\n", message);
-
-            printf("404: Can't find URL: %s\n", url.c_str());
-
-            std::string response = "HTTP/1.1 404 Not Found\r\n\r\n";
-           // if (send(clientSocket, response, (int)strlen(response), 0) <= 0)
-            if (SendDataToClient(clientSocket, response.c_str(), (int)response.length()))
-            {
-                printf("Sent 404 response to: %s:%d\n", clientIP, clientPort);
-            }
-            //closesocket(clientSocket);
+    if (!pageSource.Path.length())
+    {
+        if (strlen(message) <= 0)
             return;
-        }
 
+        std::ifstream page("html/NotFound.html");
+        std::stringstream stream;
+        if (page.is_open())
+        {
+            std::string line;
+            while (std::getline(page, line))
+            {
+                stream << line << "\n";
+            }
+
+            std::stringstream httpResponse;
+            httpResponse << "HTTP/1.1 200 OK\n"
+                << "Content-Type: " << pageSource.Type << "\n"
+                << "Content-Length: " << stream.str().size() << "\n\n"
+                << stream.str();
+
+            if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
+            {
+                //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
+            }
+        }
+        closesocket(clientSocket);
+    }
+    else
+    {
         std::ifstream page(pageSource.Path);
         std::stringstream stream;
         if (page.is_open())
@@ -219,18 +200,18 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, unsigned lo
                 stream << line << "\n";
             }
 
-            // const char* okRes = "HTTP/1.1 200 OK\r\n\r\n";û
-            // std::string response = okRes + stream.str();
-            std::string httpResponse = "HTTP/1.1 200 OK\r\n"
-                                       "Content-Type: " + pageSource.Type + "\r\n"
-                                       "Content-Length: " + std::to_string(stream.str().length()) + "\r\n\r\n"
-                                       + stream.str() + "\r\n";
+            std::stringstream httpResponse;
+            httpResponse << "HTTP/1.1 200 OK\n"
+                << "Content-Type: " << pageSource.Type  << "\n"
+                << "Content-Length: " << stream.str().size() << "\n\n"
+                << stream.str();
 
-            if(SendDataToClient(clientSocket, httpResponse.c_str(), (int)httpResponse.length()))
+            if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
             {
                 //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
             }
         }
+        closesocket(clientSocket);
     }
 }
 
@@ -240,7 +221,6 @@ void WebServer::Shutdown()
     closesocket(m_SocketHandler);
     WSACleanup();
     shutdown(m_SocketHandler, SD_BOTH);
-    FamPong::Destroy();
     m_ServerShouldRun = false;
     printf("[WebServer]: Successfully shutdown\n");
 }
@@ -252,12 +232,6 @@ void WebServer::LinkRequestToFile(std::string request, PageSource source)
 
 bool WebServer::SendDataToClient(unsigned long long socket, const char* data, int size)
 {
-    /*if (send(socket, data, size, 0) <= 0)
-    {
-        return false;
-    }
-    return true;*/
-    
     int totalSent = 0;
     while (totalSent < size) 
     {
@@ -265,25 +239,22 @@ bool WebServer::SendDataToClient(unsigned long long socket, const char* data, in
         if (sent > 0) 
         {
             totalSent += sent;
-            //printf("[WebServer]: Sent %d bytes\n", sent);
         }
         else if (sent == 0) 
         {
-            // Connection closed
             printf("[WebServer]: Send: Connection is closed\n");
             return false;
         }
-        else {
-            int errorCode = WSAGetLastError(); // Windows specific
-            if (errorCode == WSAEWOULDBLOCK) {
-                // Socket buffer is full, retry later
-                // Optionally, you can use select/poll to wait for the socket to become writable
+        else 
+        {
+            int errorCode = WSAGetLastError(); 
+            if (errorCode == WSAEWOULDBLOCK) 
+            {
                 printf("[WebServer]: Send: Socket buffer is full, retry later\n");
                 return false;
             }
             else 
             {
-                // Handle other errors
                 printf("[WebServer]: Failed to send %d bytes\n", sent);
                 return false;
             }
