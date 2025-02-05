@@ -15,7 +15,7 @@ int main(int argc, char* argv[])
 	Server.SetHomePageSource("html/teszt/index.html");
 
 	Server.LinkRequestToFile("teszt", { "html/teszt/teszt.html", "text/html" });
-	Server.LinkRequestToFile("homepage", { "html/teszt/index.html", "text/html" });
+	Server.LinkRequestToFile("homepage", { "html/index.html", "text/html" });
 	Server.LinkRequestToFile("tesztstyle.css", { "html/teszt/tesztstyle.css", "text/css"});
 	Server.LinkRequestToFile("script.js", {"html/teszt/script.js", "text/javascript"});
 	Server.LinkRequestToFile("p5teszt", { "html/teszt/p5teszt.html", "text/html" });

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <stdint.h>
 
 class WebServer
 {
@@ -27,10 +28,11 @@ public:
 
 	void SetHomePageSource(std::string source) { m_HomePageSource = source; }
 	void LinkRequestToFile(std::string request, PageSource source);
+	void SendPageToClient(PageSource page, uint32_t clientSocket);
 
-	bool SendDataToClient(unsigned long long socket, const char* data, int size);
+	bool SendDataToClient(uint32_t socket, const char* data, int size);
 
-	void HandleMessage(const char* buffer, int bytesReceived, unsigned long long clientSocket, const char* clientIP, int clientPort);
+	void HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort);
 
 private:
 

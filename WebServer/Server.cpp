@@ -146,7 +146,7 @@ void WebServer::Update()
     }
 }
 
-void WebServer::HandleMessage(const char* buffer, int bytesReceived, unsigned long long clientSocket, const char* clientIP, int clientPort)
+void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort)
 {
     if (bytesReceived <= 0)
         return;
@@ -160,58 +160,28 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, unsigned lo
 
     printf("%s:%d: %s\n", clientIP, clientPort, message);
    
+    if (!url.length())
+    {
+        PageSource page;
+        page.Path = "html/index.html";
+        page.Type = "text/html";
+        SendPageToClient(page, clientSocket);
+        return;
+    }
+
     if (!pageSource.Path.length())
     {
         if (strlen(message) <= 0)
             return;
 
-        std::ifstream page("html/NotFound.html");
-        std::stringstream stream;
-        if (page.is_open())
-        {
-            std::string line;
-            while (std::getline(page, line))
-            {
-                stream << line << "\n";
-            }
-
-            std::stringstream httpResponse;
-            httpResponse << "HTTP/1.1 200 OK\n"
-                << "Content-Type: " << pageSource.Type << "\n"
-                << "Content-Length: " << stream.str().size() << "\n\n"
-                << stream.str();
-
-            if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
-            {
-                //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
-            }
-        }
-        closesocket(clientSocket);
+        PageSource page;
+        page.Path = "html/NotFound.html";
+        page.Type = "text/html";
+        SendPageToClient(page, clientSocket);
     }
     else
     {
-        std::ifstream page(pageSource.Path);
-        std::stringstream stream;
-        if (page.is_open())
-        {
-            std::string line;
-            while (std::getline(page, line))
-            {
-                stream << line << "\n";
-            }
-
-            std::stringstream httpResponse;
-            httpResponse << "HTTP/1.1 200 OK\n"
-                << "Content-Type: " << pageSource.Type  << "\n"
-                << "Content-Length: " << stream.str().size() << "\n\n"
-                << stream.str();
-
-            if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
-            {
-                //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
-            }
-        }
-        closesocket(clientSocket);
+        SendPageToClient(pageSource, clientSocket);
     }
 }
 
@@ -230,7 +200,33 @@ void WebServer::LinkRequestToFile(std::string request, PageSource source)
     m_Files[request] = source;
 }
 
-bool WebServer::SendDataToClient(unsigned long long socket, const char* data, int size)
+void WebServer::SendPageToClient(PageSource page, uint32_t clientSocket)
+{
+    std::ifstream pageSrc(page.Path);
+    std::stringstream stream;
+    if (pageSrc.is_open())
+    {
+        std::string line;
+        while (std::getline(pageSrc, line))
+        {
+            stream << line << "\n";
+        }
+
+        std::stringstream httpResponse;
+        httpResponse << "HTTP/1.1 200 OK\n"
+            << "Content-Type: " << page.Type << "\n"
+            << "Content-Length: " << stream.str().size() << "\n\n"
+            << stream.str();
+
+        if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
+        {
+            //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
+        }
+    }
+    closesocket(clientSocket);
+}
+
+bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
 {
     int totalSent = 0;
     while (totalSent < size) 
