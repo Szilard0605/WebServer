@@ -9,9 +9,18 @@
 
 #include <iostream>
 
+#include "json.hpp"
+
 WebServer* WebServer::s_ServerInstance = nullptr;
 fd_set s_ReadFDS;
 
+struct Post
+{
+    int UserID;
+    std::string title;
+};
+
+std::vector<Post> g_Posts;
 
 WebServer::WebServer()
 {
@@ -107,22 +116,16 @@ void WebServer::Update()
     FD_ZERO(&s_ReadFDS);
     FD_SET(clientSocket, &s_ReadFDS);
 
-    // Set timeout (optional)
     struct timeval timeout;
-    timeout.tv_sec = 0;  // 1 second
+    timeout.tv_sec = 0;  
     timeout.tv_usec = 0;
 
-    // Use select to check if socket is ready for reading
     int socketCount = select(0, &s_ReadFDS, nullptr, nullptr, nullptr);
     if (socketCount == SOCKET_ERROR) 
-    {
-        // Handle error
-        //std::cerr << "Error in select\n";
         return;
-    }
+
     else if (socketCount > 0) 
     {
-        // Socket is ready for reading
         char buffer[1024];
         int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (bytesReceived > 0) 
@@ -156,32 +159,51 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t cl
     message[bytesReceived] = '\0';
 
     std::string url = ParseURLFromMessage(message);
-    PageSource pageSource = GetPageSourceFromURL(url);
+    printf("url: %s\n", url.c_str());
+    if (url == "/create_post")
+    {
+        std::string postMessage(message);
+        std::string postBody;
+        int lineBytes = 0;
+        for (size_t i = 0; i < bytesReceived; ++i)
+        {
+            if (message[i] == '\r')
+                continue;
+
+            if (message[i] == '\n')
+            {
+                if (lineBytes == 0)
+                {
+                    postBody = postMessage.substr(i + 1, (bytesReceived + 2 - i));
+                    break;
+                }
+
+                lineBytes = 0;
+            }
+            else lineBytes++;
+        }
+
+        nlohmann::json jsonBody = nlohmann::json::parse(postBody);
+        std::cout << "--- POST FROM USER ---\n";
+        std::cout << "User ID: " << jsonBody["userId"] << std::endl;
+        std::cout << "Title: " << jsonBody["title"] << std::endl;
+        std::cout << "----------------------\n";
+        return;
+    }
 
     printf("%s:%d: %s\n", clientIP, clientPort, message);
    
     if (!url.length())
     {
-        PageSource page;
-        page.Path = "html/index.html";
-        page.Type = "text/html";
-        SendPageToClient(page, clientSocket);
+        printf("No url, redirecting to index\n");
+        SendFileToClient("index.html", clientSocket);
         return;
-    }
-
-    if (!pageSource.Path.length())
-    {
-        if (strlen(message) <= 0)
-            return;
-
-        PageSource page;
-        page.Path = "html/NotFound.html";
-        page.Type = "text/html";
-        SendPageToClient(page, clientSocket);
     }
     else
     {
-        SendPageToClient(pageSource, clientSocket);
+        printf("Need to send: %s\n", url.c_str());
+        SendFileToClient(url, clientSocket);
+        return;
     }
 }
 
@@ -198,32 +220,6 @@ void WebServer::Shutdown()
 void WebServer::LinkRequestToFile(std::string request, PageSource source)
 {
     m_Files[request] = source;
-}
-
-void WebServer::SendPageToClient(PageSource page, uint32_t clientSocket)
-{
-    std::ifstream pageSrc(page.Path);
-    std::stringstream stream;
-    if (pageSrc.is_open())
-    {
-        std::string line;
-        while (std::getline(pageSrc, line))
-        {
-            stream << line << "\n";
-        }
-
-        std::stringstream httpResponse;
-        httpResponse << "HTTP/1.1 200 OK\n"
-            << "Content-Type: " << page.Type << "\n"
-            << "Content-Length: " << stream.str().size() << "\n\n"
-            << stream.str();
-
-        if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
-        {
-            //printf("Sent %s to %s:%d\n", pageSource.Path.c_str(), clientIP, clientPort);
-        }
-    }
-    closesocket(clientSocket);
 }
 
 bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
@@ -259,17 +255,52 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
     return true;
 }
 
+void WebServer::SendFileToClient(std::string fileName, uint32_t clientSocket)
+{
+    std::ifstream pageSrc(std::string("html\\") + fileName, std::ios::binary);
+    std::stringstream stream;
+    if (pageSrc.is_open())
+    {
+        std::string line;
+        while (std::getline(pageSrc, line))
+        {
+            stream << line << "\n";
+        }
+
+        std::stringstream httpResponse;
+        std::string type = GetSourceTypeByFilename(fileName);
+        httpResponse << "HTTP/1.1 200 OK\n"
+            << "Content-Type: " << type << "\n"
+            << "Content-Length: " << stream.str().size() << "\n\n"
+            << stream.str();
+
+        if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
+        {
+            printf("Sent %s\n", fileName.c_str());
+        }
+    }
+    closesocket(clientSocket);
+}
+
 std::string WebServer::ParseURLFromMessage(std::string message)
 {
     std::string parsedURL = message.erase(0, 5);
     return message.substr(0, parsedURL.find(' '));
 }
 
-WebServer::PageSource WebServer::GetPageSourceFromURL(std::string url)
+std::string WebServer::GetSourceTypeByFilename(std::string fileName)
 {
-    if (m_Files.find(url) != m_Files.end())
-    {
-        return m_Files.at(url);
-    }
-    return PageSource();
+    std::unordered_map<std::string, std::string> extMap = {
+        {".css", "text/css"},
+        {".js", "text/javascript"},
+        {".png", "image/png"}
+    };
+
+    size_t pos = fileName.find(".");
+    std::string type = fileName.substr(pos, fileName.length());
+    
+    if (extMap.find(type) != extMap.end())
+        return extMap[type];
+
+    return "Unknown";
 }

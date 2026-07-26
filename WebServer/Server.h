@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <stdint.h>
+#include <filesystem>
 
 class WebServer
 {
@@ -28,9 +29,8 @@ public:
 
 	void SetHomePageSource(std::string source) { m_HomePageSource = source; }
 	void LinkRequestToFile(std::string request, PageSource source);
-	void SendPageToClient(PageSource page, uint32_t clientSocket);
-
 	bool SendDataToClient(uint32_t socket, const char* data, int size);
+	void SendFileToClient(std::string fileName, uint32_t clientSocket);
 
 	void HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort);
 
@@ -41,7 +41,7 @@ private:
 	static WebServer* s_ServerInstance;
 
 	std::string ParseURLFromMessage(std::string message);
-	PageSource GetPageSourceFromURL(std::string url);
+	std::string GetSourceTypeByFilename(std::string fileName);
 
 	std::string m_HomePageSource;
 

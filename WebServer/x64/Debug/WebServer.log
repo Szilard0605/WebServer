@@ -1,0 +1,11 @@
+﻿  Server.cpp
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(139,50): warning C4244: 'argument': conversion from 'SOCKET' to 'uint32_t', possible loss of data
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4305: 'argument': truncation from 'int' to 'const _Elem'
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4305:         with
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4305:         [
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4305:             _Elem=char
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4305:         ]
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,34): warning C4309: 'argument': truncation of constant value
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(172,14): warning C4834: discarding return value of function with [[nodiscard]] attribute
+C:\Users\User\Desktop\Projects\WebServer\WebServer\Server.cpp(240,95): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+  WebServer.vcxproj -> C:\Users\User\Desktop\Projects\WebServer\x64\Debug\WebServer.exe
