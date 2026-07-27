@@ -57,9 +57,9 @@ bool WebServer::Start(const int Port)
     sAddr.sin_port = htons(m_Port);
     sAddr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(m_SocketHandler, (sockaddr*)&sAddr, sizeof(sAddr)) != 0)
+    if (bind(m_SocketHandler, (struct sockaddr*)&sAddr, sizeof(sAddr)) == -1)
     {
-        printf("Couldn't bind socket\n");
+        printf("Couldn't bind socket: %s\n", strerror(errno));
         return false;
     }
 
@@ -74,7 +74,7 @@ void WebServer::Update()
 
     sockaddr_in clientAddr;
     socklen_t addrlen = sizeof(clientAddr);
-    unsigned long long clientSocket = accept(m_SocketHandler, (sockaddr*)&clientAddr, &addrlen);
+    int clientSocket = accept(m_SocketHandler, (sockaddr*)&clientAddr, &addrlen);
 
     struct sockaddr_in* pV4Addr = (struct sockaddr_in*)&clientAddr;
     struct in_addr ipAddr = pV4Addr->sin_addr;
@@ -87,9 +87,10 @@ void WebServer::Update()
 
     if (clientSocket <= 0)
     {
-        printf("Accepting connection request failed from address: %s:%d\n", clientIP, clientPort);
+        //printf("Accepting connection request failed from address: %s:%d\n", clientIP, clientPort);
         return;
     }
+
     FD_ZERO(&s_ReadFDS);
     FD_SET(clientSocket, &s_ReadFDS);
 
