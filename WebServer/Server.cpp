@@ -76,6 +76,14 @@ void WebServer::Update()
     socklen_t addrlen = sizeof(clientAddr);
     int clientSocket = accept(m_SocketHandler, (sockaddr*)&clientAddr, &addrlen);
 
+    if (clientSocket == -1)
+    {
+        if (errno == EWOULDBLOCK || errno == EAGAIN)
+            return; // no client waiting
+
+        std::cout << "Error in select: " << strerror(errno) << std::endl; 
+        return;
+    }
     struct sockaddr_in* pV4Addr = (struct sockaddr_in*)&clientAddr;
     struct in_addr ipAddr = pV4Addr->sin_addr;
 
@@ -85,16 +93,12 @@ void WebServer::Update()
     u_short clientPort = ntohs(pV4Addr->sin_port);
 
 
-    if (clientSocket <= 0)
-    {
-        //printf("Accepting connection request failed from address: %s:%d\n", clientIP, clientPort);
-        return;
-    }
 
     FD_ZERO(&s_ReadFDS);
     FD_SET(clientSocket, &s_ReadFDS);
+ 
+    int socketCount = select(clientSocket + 1, &s_ReadFDS, nullptr, nullptr, nullptr);
 
-    int socketCount = select(0, &s_ReadFDS, nullptr, nullptr, nullptr);
     if (socketCount == -1) 
         return;
 
@@ -108,7 +112,7 @@ void WebServer::Update()
         }
         else if (bytesReceived == 0) 
         {
-            printf("Connectionis closed for %s:%d\n", clientIP, clientPort);
+            printf("Connection is closed for %s:%d\n", clientIP, clientPort);
             return;
         }
         else
@@ -121,6 +125,8 @@ void WebServer::Update()
 
 void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort)
 {
+    printf("%d bytes received\n", bytesReceived);
+
     if (bytesReceived <= 0)
         return;
   
@@ -130,36 +136,6 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t cl
 
     std::string url = ParseURLFromMessage(message);
     printf("url: %s\n", url.c_str());
-    if (url == "/create_post")
-    {
-        std::string postMessage(message);
-        std::string postBody;
-        int lineBytes = 0;
-        for (int i = 0; i < bytesReceived; ++i)
-        {
-            if (message[i] == '\r')
-                continue;
-
-            if (message[i] == '\n')
-            {
-                if (lineBytes == 0)
-                {
-                    postBody = postMessage.substr(i + 1, (bytesReceived + 2 - i));
-                    break;
-                }
-
-                lineBytes = 0;
-            }
-            else lineBytes++;
-        }
-
-        nlohmann::json jsonBody = nlohmann::json::parse(postBody);
-        std::cout << "--- POST FROM USER ---\n";
-        std::cout << "User ID: " << jsonBody["userId"] << std::endl;
-        std::cout << "Title: " << jsonBody["title"] << std::endl;
-        std::cout << "----------------------\n";
-        return;
-    }
 
     printf("%s:%d: %s\n", clientIP, clientPort, message);
    
@@ -209,8 +185,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
         }
         else 
         {
-            /*int errorCode = WSAGetLastError(); 
-            if (errorCode == WSAEWOULDBLOCK) 
+            if (errno == EWOULDBLOCK) 
             {
                 printf("[WebServer]: Send: Socket buffer is full, retry later\n");
                 return false;
@@ -219,7 +194,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
             {
                 printf("[WebServer]: Failed to send %d bytes\n", sent);
                 return false;
-            }*/
+            }
         }
     }
     return true;
@@ -227,7 +202,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
 
 void WebServer::SendFileToClient(std::string fileName, uint32_t clientSocket)
 {
-    std::ifstream pageSrc(std::string("html\\") + fileName, std::ios::binary);
+    std::ifstream pageSrc(std::string("html/") + fileName, std::ios::binary);
     std::stringstream stream;
     if (pageSrc.is_open())
     {
@@ -248,6 +223,10 @@ void WebServer::SendFileToClient(std::string fileName, uint32_t clientSocket)
         {
             printf("Sent %s\n", fileName.c_str());
         }
+    }
+    else
+    {
+        std::cout << "Couldn't open file: " << fileName;
     }
     close(clientSocket);
 }
