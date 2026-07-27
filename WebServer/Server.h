@@ -19,7 +19,7 @@ public:
 
 	WebServer();
 	~WebServer();
-	bool Start(const char* Address, const int Port);
+	bool Start(const int Port);
 	void Update();
 	void Shutdown();
 
@@ -47,7 +47,7 @@ private:
 
 	std::unordered_map<std::string, PageSource> m_Files;
 
-	unsigned long long m_SocketHandler = 0;
+	int m_SocketHandler = 0;
 	std::string m_Address;
 	int m_Port = 0;
 	int m_ClientCount = 0;

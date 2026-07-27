@@ -2,8 +2,14 @@
 
 #include <stdio.h>
 
-#include <WinSock2.h>
-#include <ws2tcpip.h>
+//#include <WinSock2.h>
+//#include <ws2tcpip.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 #include <fstream>
 #include <sstream>
 
@@ -14,14 +20,6 @@
 WebServer* WebServer::s_ServerInstance = nullptr;
 fd_set s_ReadFDS;
 
-struct Post
-{
-    int UserID;
-    std::string title;
-};
-
-std::vector<Post> g_Posts;
-
 WebServer::WebServer()
 {
     if (s_ServerInstance)
@@ -31,54 +29,33 @@ WebServer::WebServer()
     }
 
     s_ServerInstance = this;
-
-    WSADATA wsData;
-    WORD ver = MAKEWORD(2, 2);
-
-    int wsOk = WSAStartup(ver, &wsData);
-    if (wsOk != 0)
-    {
-        printf("Couldn't startup WSA\n");
-        return;
-    }
 }
 
 WebServer::~WebServer()
 {
-    closesocket(m_SocketHandler);
-    WSACleanup();
-    shutdown(m_SocketHandler, SD_BOTH);
+    close(m_SocketHandler);
+    //shutdown(m_SocketHandler, SD_BOTH);
 }
 
-bool WebServer::Start(const char* Address, const int Port)
+bool WebServer::Start(const int Port)
 {
     m_Port = Port;
-
     m_SocketHandler = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (m_SocketHandler == SOCKET_ERROR)
+    if (m_SocketHandler == -1)
     {
         printf("Couldn't open socket handler\n");
         return false;
     }
 
-    u_long iMode = 1;
-    if (ioctlsocket(m_SocketHandler, FIONBIO, &iMode) == SOCKET_ERROR)
-    {
-        printf("ioctlsocket failed\n");
-        return false;
-    }
+    int flags = fcntl(m_SocketHandler, F_GETFL, 0); 
+    fcntl(m_SocketHandler, F_SETFL, flags | O_NONBLOCK);
+
 
     sockaddr_in sAddr;
     sAddr.sin_family = AF_INET;
-    
     sAddr.sin_port = htons(m_Port);
-    int res = inet_pton(AF_INET, Address, &sAddr.sin_addr.S_un.S_addr);
-    if (res <= 0)
-    {
-        printf("Failed to bind IPv4 Address: %s\n", Address);
-        return false;
-    }
+    sAddr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(m_SocketHandler, (sockaddr*)&sAddr, sizeof(sAddr)) != 0)
     {
@@ -97,7 +74,7 @@ void WebServer::Update()
 
     sockaddr_in clientAddr;
     socklen_t addrlen = sizeof(clientAddr);
-    SOCKET clientSocket = accept(m_SocketHandler, (sockaddr*)&clientAddr, &addrlen);
+    unsigned long long clientSocket = accept(m_SocketHandler, (sockaddr*)&clientAddr, &addrlen);
 
     struct sockaddr_in* pV4Addr = (struct sockaddr_in*)&clientAddr;
     struct in_addr ipAddr = pV4Addr->sin_addr;
@@ -116,12 +93,8 @@ void WebServer::Update()
     FD_ZERO(&s_ReadFDS);
     FD_SET(clientSocket, &s_ReadFDS);
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;  
-    timeout.tv_usec = 0;
-
     int socketCount = select(0, &s_ReadFDS, nullptr, nullptr, nullptr);
-    if (socketCount == SOCKET_ERROR) 
+    if (socketCount == -1) 
         return;
 
     else if (socketCount > 0) 
@@ -139,12 +112,8 @@ void WebServer::Update()
         }
         else
         {
-            int errorCode = WSAGetLastError(); 
-            if (errorCode != WSAEWOULDBLOCK)
-            {
-                std::cerr << "Error in recv: " << errorCode << "\n";
-                return;
-            }
+            std::cerr << "Error in recv.\n";
+    
         }
     }
 }
@@ -165,7 +134,7 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t cl
         std::string postMessage(message);
         std::string postBody;
         int lineBytes = 0;
-        for (size_t i = 0; i < bytesReceived; ++i)
+        for (int i = 0; i < bytesReceived; ++i)
         {
             if (message[i] == '\r')
                 continue;
@@ -210,9 +179,9 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t cl
 
 void WebServer::Shutdown()
 {
-    closesocket(m_SocketHandler);
-    WSACleanup();
-    shutdown(m_SocketHandler, SD_BOTH);
+    close(m_SocketHandler);
+    //WSACleanup();
+    //shutdown(m_SocketHandler, SD_BOTH);
     m_ServerShouldRun = false;
     printf("[WebServer]: Successfully shutdown\n");
 }
@@ -239,7 +208,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
         }
         else 
         {
-            int errorCode = WSAGetLastError(); 
+            /*int errorCode = WSAGetLastError(); 
             if (errorCode == WSAEWOULDBLOCK) 
             {
                 printf("[WebServer]: Send: Socket buffer is full, retry later\n");
@@ -249,7 +218,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
             {
                 printf("[WebServer]: Failed to send %d bytes\n", sent);
                 return false;
-            }
+            }*/
         }
     }
     return true;
@@ -279,7 +248,7 @@ void WebServer::SendFileToClient(std::string fileName, uint32_t clientSocket)
             printf("Sent %s\n", fileName.c_str());
         }
     }
-    closesocket(clientSocket);
+    close(clientSocket);
 }
 
 std::string WebServer::ParseURLFromMessage(std::string message)

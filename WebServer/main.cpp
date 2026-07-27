@@ -1,16 +1,14 @@
 
 #include "Server.h"
-#include <windows.h>
-
 #include <time.h>
 
 #define SERVER_TICK_RATE 3
 
-int main(int argc, char* argv[])
+int main()
 {
 	WebServer Server;
 
-	if (Server.Start("192.168.0.177", 80))
+	if (Server.Start(80))
 	{
 		printf("Server started\n");
 	}
@@ -26,15 +24,6 @@ int main(int argc, char* argv[])
 		{
 			Server.Update();
 			lastUpdateTime = now;
-		}
-
-
-		if (GetForegroundWindow() == GetConsoleWindow())
-		{
-			if (GetAsyncKeyState(VK_F1))
-			{
-				Server.Shutdown();
-			}
 		}
 	}
 
