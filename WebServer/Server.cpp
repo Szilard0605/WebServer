@@ -6,10 +6,8 @@
 #include <ws2tcpip.h>
 #include <fstream>
 #include <sstream>
-
+#include <filesystem>
 #include <iostream>
-
-#include "json.hpp"
 
 WebServer* WebServer::s_ServerInstance = nullptr;
 fd_set s_ReadFDS;
@@ -134,7 +132,7 @@ void WebServer::Update()
         }
         else if (bytesReceived == 0) 
         {
-            printf("Connectionis closed for %s:%d\n", clientIP, clientPort);
+            printf("Connection is closed for %s:%d\n", clientIP, clientPort);
             return;
         }
         else
@@ -158,55 +156,68 @@ void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t cl
     memcpy(message, buffer, bytesReceived);
     message[bytesReceived] = '\0';
 
-    std::string url = ParseURLFromMessage(message);
-    printf("url: %s\n", url.c_str());
-    if (url == "/create_post")
+    //printf(message);
+
+	HTTPRequest request(message, clientSocket);
+
+	printf("%s:%d: %s: %s\n", clientIP, clientPort, request.Method().string().c_str(), request.URL().c_str());
+
+    if (!request.URL().length())
     {
-        std::string postMessage(message);
-        std::string postBody;
-        int lineBytes = 0;
-        for (size_t i = 0; i < bytesReceived; ++i)
-        {
-            if (message[i] == '\r')
-                continue;
-
-            if (message[i] == '\n')
-            {
-                if (lineBytes == 0)
-                {
-                    postBody = postMessage.substr(i + 1, (bytesReceived + 2 - i));
-                    break;
-                }
-
-                lineBytes = 0;
-            }
-            else lineBytes++;
-        }
-
-        nlohmann::json jsonBody = nlohmann::json::parse(postBody);
-        std::cout << "--- POST FROM USER ---\n";
-        std::cout << "User ID: " << jsonBody["userId"] << std::endl;
-        std::cout << "Title: " << jsonBody["title"] << std::endl;
-        std::cout << "----------------------\n";
-        return;
-    }
-
-    printf("%s:%d: %s\n", clientIP, clientPort, message);
-   
-    if (!url.length())
-    {
-        printf("No url, redirecting to index\n");
         SendFileToClient("index.html", clientSocket);
         return;
     }
-    else
+    
+    HandleRequest(request);
+}
+
+void WebServer::HandleRequest(HTTPRequest request)
+{
+    if (request.Method() == HTTPMethodType::GET)
     {
-        printf("Need to send: %s\n", url.c_str());
-        SendFileToClient(url, clientSocket);
-        return;
+        std::string url = request.URL();
+
+        if (url == "/")
+        {
+            SendFileToClient("index.html", request.ClientSocket());
+            return;
+        }
+
+        if (DirectoryExists(url))
+        {
+            SendFileToClient(url + "/index.html", request.ClientSocket());
+            return;
+        }
+
+        if (!HTMLSourceFileExists(url))
+        {
+            SendFileToClient("404.html", request.ClientSocket());
+            return;
+        }
+        else
+        {
+            SendFileToClient(url, request.ClientSocket());
+            return;
+        }
     }
 }
 
+bool WebServer::HTMLSourceFileExists(const std::string& url)
+{
+    std::string path = std::string("html") + url;
+    std::ifstream file(path, std::ios::binary);
+    if (file.is_open())
+    {
+        file.close();
+        return true;
+    }
+    return false;
+}
+
+bool WebServer::DirectoryExists(const std::string& dirName)
+{
+    return std::filesystem::is_directory(std::filesystem::path("html" + dirName));
+}
 
 void WebServer::Shutdown()
 {
@@ -215,11 +226,6 @@ void WebServer::Shutdown()
     shutdown(m_SocketHandler, SD_BOTH);
     m_ServerShouldRun = false;
     printf("[WebServer]: Successfully shutdown\n");
-}
-
-void WebServer::LinkRequestToFile(std::string request, PageSource source)
-{
-    m_Files[request] = source;
 }
 
 bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
@@ -255,29 +261,27 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
     return true;
 }
 
-void WebServer::SendFileToClient(std::string fileName, uint32_t clientSocket)
+void WebServer::SendFileToClient(const std::string& fileName, uint32_t clientSocket)
 {
-    std::ifstream pageSrc(std::string("html\\") + fileName, std::ios::binary);
+    std::string path = std::string("html/") + fileName;
+    std::ifstream pageSrc(path, std::ios::binary);
     std::stringstream stream;
     if (pageSrc.is_open())
     {
-        std::string line;
-        while (std::getline(pageSrc, line))
-        {
-            stream << line << "\n";
-        }
+        std::ostringstream stream;
+        stream << pageSrc.rdbuf();
+        std::string content = stream.str();
 
         std::stringstream httpResponse;
-        std::string type = GetSourceTypeByFilename(fileName);
-        httpResponse << "HTTP/1.1 200 OK\n"
-            << "Content-Type: " << type << "\n"
-            << "Content-Length: " << stream.str().size() << "\n\n"
-            << stream.str();
+        std::string Type = GetSourceTypeByFilename(fileName);
+        httpResponse << "HTTP/1.1 200 OK\r\n"
+                     << "Content-Type: " << Type << "\r\n"
+                     << "Content-Length: " << content.size() << "\r\n"
+                     << "Connection: close\r\n" 
+                     << "\r\n"
+                     << content;
 
-        if (SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size()))
-        {
-            printf("Sent %s\n", fileName.c_str());
-        }
+        SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size());
     }
     closesocket(clientSocket);
 }
@@ -297,10 +301,10 @@ std::string WebServer::GetSourceTypeByFilename(std::string fileName)
     };
 
     size_t pos = fileName.find(".");
-    std::string type = fileName.substr(pos, fileName.length());
+    std::string Type = fileName.substr(pos, fileName.length());
     
-    if (extMap.find(type) != extMap.end())
-        return extMap[type];
+    if (extMap.find(Type) != extMap.end())
+        return extMap[Type];
 
     return "Unknown";
 }

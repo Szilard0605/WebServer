@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <filesystem>
 
+#include "HTTPRequest.h"
+
 class WebServer
 {
 public:
@@ -27,25 +29,20 @@ public:
 
 	static WebServer* GetInstance() { return s_ServerInstance; }
 
-	void SetHomePageSource(std::string source) { m_HomePageSource = source; }
-	void LinkRequestToFile(std::string request, PageSource source);
 	bool SendDataToClient(uint32_t socket, const char* data, int size);
-	void SendFileToClient(std::string fileName, uint32_t clientSocket);
+	bool HTMLSourceFileExists(const std::string& url);
+	bool DirectoryExists(const std::string& dirName);
+	void SendFileToClient(const std::string& fileName, uint32_t clientSocket);
 
 	void HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort);
-
+	void HandleRequest(HTTPRequest request);
 private:
-
 	bool m_ServerShouldRun = false;
 
 	static WebServer* s_ServerInstance;
 
 	std::string ParseURLFromMessage(std::string message);
 	std::string GetSourceTypeByFilename(std::string fileName);
-
-	std::string m_HomePageSource;
-
-	std::unordered_map<std::string, PageSource> m_Files;
 
 	unsigned long long m_SocketHandler = 0;
 	std::string m_Address;
