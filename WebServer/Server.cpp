@@ -8,17 +8,15 @@
 #include <sstream>
 #include <filesystem>
 #include <iostream>
+#include <unordered_map>
 
 WebServer* WebServer::s_ServerInstance = nullptr;
 fd_set s_ReadFDS;
 
-struct Post
-{
-    int UserID;
-    std::string title;
+std::unordered_map<int, std::string> ResponseStringMap = {
+    { 200, "OK" },
+    { 404, "Not Found"}
 };
-
-std::vector<Post> g_Posts;
 
 WebServer::WebServer()
 {
@@ -147,7 +145,7 @@ void WebServer::Update()
     }
 }
 
-void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint32_t clientSocket, const char* clientIP, int clientPort)
+void WebServer::HandleMessage(const char* buffer, int bytesReceived, uint64_t clientSocket, const char* clientIP, int clientPort)
 {
     if (bytesReceived <= 0)
         return;
@@ -189,34 +187,74 @@ void WebServer::HandleRequest(HTTPRequest request)
             return;
         }
 
-        if (!HTMLSourceFileExists(url))
-        {
-            SendFileToClient("404.html", request.ClientSocket());
-            return;
-        }
-        else
+        if (HTMLSourceFileExists(url))
         {
             SendFileToClient(url, request.ClientSocket());
             return;
         }
+
+        RespondToClient(request.ClientSocket(), 404, "elbasztad");
     }
 }
 
 bool WebServer::HTMLSourceFileExists(const std::string& url)
 {
-    std::string path = std::string("html") + url;
-    std::ifstream file(path, std::ios::binary);
-    if (file.is_open())
+    namespace fs = std::filesystem;
+
+    std::string path = url;
+
+    if (!path.empty() && path.front() == '/')
+        path.erase(0, 1);
+
+    const fs::path root = fs::absolute("html").lexically_normal();
+    const fs::path relative(path);
+    const fs::path candidate = (root / relative).lexically_normal();
+
+    // candidate must remain inside root
+    auto rootIt = root.begin();
+    auto candidateIt = candidate.begin();
+
+    for (; rootIt != root.end() && candidateIt != candidate.end();
+        ++rootIt, ++candidateIt)
     {
-        file.close();
-        return true;
+        if (*rootIt != *candidateIt)
+            return false;
     }
-    return false;
+
+    if (rootIt != root.end())
+        return false;
+
+    std::ifstream file(candidate, std::ios::binary);
+    return file.is_open();
 }
 
 bool WebServer::DirectoryExists(const std::string& dirName)
 {
-    return std::filesystem::is_directory(std::filesystem::path("html" + dirName));
+    namespace fs = std::filesystem;
+
+    std::string path = dirName;
+
+    while (!path.empty() && (path.front() == '/' || path.front() == '\\'))
+        path.erase(path.begin());
+
+    const fs::path root = fs::absolute("html").lexically_normal();
+    const fs::path relative(path);
+    const fs::path candidate = (root / relative).lexically_normal();
+
+    auto rootIt = root.begin();
+    auto candidateIt = candidate.begin();
+
+    for (; rootIt != root.end() && candidateIt != candidate.end();
+        ++rootIt, ++candidateIt)
+    {
+        if (*rootIt != *candidateIt)
+            return false;
+    }
+
+    if (rootIt != root.end())
+        return false;
+
+    return fs::is_directory(candidate);
 }
 
 void WebServer::Shutdown()
@@ -228,12 +266,12 @@ void WebServer::Shutdown()
     printf("[WebServer]: Successfully shutdown\n");
 }
 
-bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
+bool WebServer::SendDataToClient(uint64_t socket, const char* data, size_t size)
 {
-    int totalSent = 0;
+    size_t totalSent = 0;
     while (totalSent < size) 
     {
-        int sent = send(socket, data + totalSent, size - totalSent, 0);
+        int sent = send(socket, data + totalSent, static_cast<int>(size - totalSent), 0);
         if (sent > 0) 
         {
             totalSent += sent;
@@ -261,7 +299,7 @@ bool WebServer::SendDataToClient(uint32_t socket, const char* data, int size)
     return true;
 }
 
-void WebServer::SendFileToClient(const std::string& fileName, uint32_t clientSocket)
+void WebServer::SendFileToClient(const std::string& fileName, uint64_t clientSocket)
 {
     std::string path = std::string("html/") + fileName;
     std::ifstream pageSrc(path, std::ios::binary);
@@ -283,6 +321,20 @@ void WebServer::SendFileToClient(const std::string& fileName, uint32_t clientSoc
 
         SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size());
     }
+    closesocket(clientSocket);
+}
+
+void WebServer::RespondToClient(uint64_t clientSocket, int responseCode, std::string responseBody)
+{
+    std::stringstream httpResponse;
+    httpResponse << "HTTP/1.1 " << responseCode << ResponseStringMap[responseCode] << "\r\n"
+        << "Content-Type: text/html\r\n"
+        << "Content-Length: " << responseBody.size() << "\r\n"
+        << "Connection: close\r\n"
+        << "\r\n"
+        << responseBody;
+
+    SendDataToClient(clientSocket, httpResponse.str().c_str(), httpResponse.str().size());
     closesocket(clientSocket);
 }
 

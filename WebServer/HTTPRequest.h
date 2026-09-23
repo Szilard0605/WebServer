@@ -98,6 +98,8 @@ public:
 	std::string HTTPVersion() const { return m_HTTPVersion;  }
 	std::string Body()		  const { return m_Body;		 }
 	uint64_t ClientSocket()   const { return m_ClientSocket; }
+
+	bool IsValid();
 private:
 	uint64_t m_ClientSocket;
 	HTTPMethod m_Method;
